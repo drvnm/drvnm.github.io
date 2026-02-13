@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>...</title>
+
+<style>
+  /* ---------------- Fonts ---------------- */
+  @font-face{
+    font-family:"AllerDDLC";
+    src:url("./fonts/aller.ttf") format("truetype");
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"NameDDLC";
+    src:url("./fonts/d.ttf") format("truetype");
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"EditedDDLC";
+    src:url("./fonts/verily.ttf") format("truetype");
+    font-display:swap;
+  }
+
+  :root{
+    --pink:#ff9bc8;
+    --pink2:#ff7fb7;
+    --ui: rgba(255,255,255,0.92);
+    --ui2: rgba(255,255,255,0.86);
+    --ink:#2b2b2b;
+    --shadow: rgba(0,0,0,0.25);
+
+    --stage: 0;
+
+    /* ramps */
+    --zoom: 1;
+    --darken: 0;          /* capped in JS so it never goes fully black */
+    --vignette: 0;
+    --grain: 0;
+    --shake: 0px;
+
+    --glitch: 0;          /* glitch layer opacity */
+    --rgb: 0px;           /* chromatic offset */
+    --hue: 0deg;
+    --blur: 0px;
+    --invert: 0;
+
+    --flashW: 0;
+    --flashB: 0;
+
+    --tear: 0;
+    --lines: 0;
+
+    /* “scene” variables */
+    --sceneOn: 0;         /* 0/1 toggled */
+    --sceneTint: 0deg;    /* hue cycling */
+    --scenePulse: 0;      /* strobe intensity */
+  }
+
+  html,body{
+    height:100%;
+    margin:0;
+    overflow:hidden;
+    background:#000;
+    user-select:none;
+    font-family:"AllerDDLC", Arial, sans-serif;
+  }
+
+  /* -------- Autoplay unlock overlay -------- */
+  .tap-to-start{
+    position:fixed; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    background: rgba(0,0,0,0.60);
+    z-index: 99999;
+    color:#fff;
+    opacity:0;
+    pointer-events:none;
+    transition: opacity 180ms ease;
+  }
+  .tap-to-start.on{ opacity:1; pointer-events:auto; }
+  .tap-to-start .box{
+    background: rgba(20,0,20,0.65);
+    border: 2px solid rgba(255,155,200,0.55);
+    box-shadow: 0 22px 90px rgba(0,0,0,0.65);
+    padding: 18px 22px;
+    border-radius: 12px;
+    text-align:center;
+    max-width: 520px;
+  }
+  .tap-to-start .small{
+    opacity:0.85;
+    margin-top:8px;
+    font-size:14px;
+  }
+
+  /* ---------------- Scene ---------------- */
+  .scene{
+    position:relative;
+    width:100%; height:100%;
+    transform: scale(var(--zoom));
+    transform-origin:center;
+    transition: transform 120ms ease;
+
+    filter:
+      brightness(calc(1 - var(--darken)))
+      saturate(calc(1 - (var(--stage) * 0.07)))
+      contrast(calc(1 + (var(--stage) * 0.08)))
+      hue-rotate(var(--hue))
+      blur(var(--blur))
+      invert(var(--invert));
+  }
+
+  /* Background */
+  .bg{
+    position:absolute; inset:0;
+    background-size:cover;
+    background-position:center;
+    transform: scale(1.03);
+    filter: saturate(calc(1 + var(--sceneOn) * 0.6));
+  }
+
+  /* Soft overlay (fades away) */
+  .soft{
+    position:absolute; inset:0;
+    background:
+      radial-gradient(circle at 20% 10%, rgba(255,255,255,0.16), transparent 42%),
+      radial-gradient(circle at 80% 0%, rgba(255,255,255,0.12), transparent 48%),
+      linear-gradient(180deg, rgba(255,210,232,0.16), rgba(255,210,232,0.06));
+    mix-blend-mode: screen;
+    opacity: calc(0.70 - (var(--stage) * 0.10));
+    transition: opacity 220ms ease;
+    pointer-events:none;
+  }
+
+  /* Vignette */
+  .vignette{
+    position:absolute; inset:0;
+    background: radial-gradient(circle at center, transparent 34%, rgba(0,0,0,0.82));
+    opacity: var(--vignette);
+    transition: opacity 120ms ease;
+    pointer-events:none;
+  }
+
+  /* White/black flashes */
+  .flashW, .flashB{
+    position:absolute; inset:0;
+    pointer-events:none;
+    transition: opacity 60ms linear;
+    z-index: 50;
+  }
+  .flashW{ background: rgba(255,255,255,0.95); opacity: var(--flashW); mix-blend-mode: overlay; }
+  .flashB{ background: rgba(0,0,0,0.95); opacity: var(--flashB); }
+
+  /* Scene color wash (neon) */
+  .sceneWash{
+    position:absolute; inset:0;
+    pointer-events:none;
+    opacity: calc(var(--sceneOn) * 0.65);
+    background:
+      radial-gradient(circle at 20% 30%, rgba(255,0,120,0.35), transparent 45%),
+      radial-gradient(circle at 80% 20%, rgba(0,200,255,0.30), transparent 48%),
+      radial-gradient(circle at 50% 85%, rgba(140,255,0,0.22), transparent 55%),
+      linear-gradient(180deg, rgba(255,255,255,0.06), rgba(0,0,0,0.10));
+    filter: hue-rotate(var(--sceneTint));
+    mix-blend-mode: screen;
+    z-index: 35;
+  }
+
+  /* Scene pulse strobe (subtle) */
+  .scenePulse{
+    position:absolute; inset:0;
+    pointer-events:none;
+    opacity: var(--scenePulse);
+    background: rgba(255,255,255,0.75);
+    mix-blend-mode: overlay;
+    z-index: 36;
+    transition: opacity 40ms linear;
+  }
+
+  /* ---------------- Grain (optimized tile) ---------------- */
+  canvas#grain{
+    position:absolute; inset:0;
+    opacity: var(--grain);
+    mix-blend-mode: overlay;
+    pointer-events:none;
+    image-rendering: pixelated;
+    z-index: 20;
+  }
+
+  /* ---------------- CRT scanlines ---------------- */
+  .crt{
+    position:absolute; inset:0;
+    pointer-events:none;
+    opacity: var(--lines);
+    mix-blend-mode: overlay;
+    background:
+      linear-gradient(rgba(255,255,255,0.06), rgba(0,0,0,0.06)) 0 0/100% 3px,
+      radial-gradient(circle at center, rgba(255,255,255,0.06), transparent 45%);
+    filter: contrast(1.05);
+    z-index: 22;
+  }
+
+  /* ---------------- Tear lines ---------------- */
+  .tear{
+    position:absolute; inset:0;
+    pointer-events:none;
+    opacity: var(--tear);
+    background:
+      repeating-linear-gradient(
+        180deg,
+        rgba(255,255,255,0.00) 0px,
+        rgba(255,255,255,0.00) 14px,
+        rgba(0,0,0,0.28) 15px,
+        rgba(255,255,255,0.00) 16px
+      );
+    mix-blend-mode: overlay;
+    filter: blur(0.2px) contrast(1.1);
+    animation: tearMove 160ms infinite linear;
+    z-index: 23;
+  }
+  @keyframes tearMove{
+    0%{ transform: translateY(0px); }
+    100%{ transform: translateY(-16px); }
+  }
+
+  /* ---------------- Glitch layer (chromatic split) ---------------- */
+  .glitch{
+    position:absolute; inset:0;
+    pointer-events:none;
+    opacity: var(--glitch);
+    background-size:cover;
+    background-position:center;
+    filter: contrast(1.16) saturate(0.95);
+    z-index: 18;
+  }
+  .glitch::before,
+  .glitch::after{
+    content:"";
+    position:absolute; inset:0;
+    background: inherit;
+    background-size:cover;
+    background-position:center;
+    opacity: 0.62;
+    mix-blend-mode: screen;
+  }
+  .glitch::before{ transform: translateX(var(--rgb)); filter: hue-rotate(14deg); }
+  .glitch::after { transform: translateX(calc(var(--rgb) * -1)); filter: hue-rotate(-14deg); }
+
+  /* ---------------- Choices ---------------- */
+  .choices-wrap{
+    position:absolute;
+    left:50%; top:42%;
+    transform: translate(-50%,-50%);
+    width:min(560px, 92vw);
+    z-index:60;
+    transition: transform 120ms ease;
+  }
+  .choice{
+    font-family:"AllerDDLC", Arial, sans-serif;
+    font-size: 26px;
+    color:#5b2a3e;
+    background:#fff;
+    border: 4px solid var(--pink);
+    box-shadow: 0 10px 30px var(--shadow);
+    padding: 14px 18px;
+    margin: 16px 0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    position:relative;
+    cursor:pointer;
+    transition: transform 120ms ease, border-color 120ms ease, background 120ms ease, filter 120ms ease, opacity 120ms ease;
+    will-change: transform;
+  }
+  .choice:hover{
+    background:#fff7fb;
+    border-color: var(--pink2);
+    transform: translateY(-1px);
+  }
+  .choice::after{
+    content:"";
+    position:absolute;
+    left:0; right:0; top:0;
+    height:8px;
+    background: rgba(255,155,200,0.35);
+    opacity:0.7;
+    pointer-events:none;
+  }
+
+  /* ---------------- Textbox ---------------- */
+  .textbox{
+    position:absolute;
+    left:50%;
+    bottom:24px;
+    transform: translateX(-50%);
+    width:min(1080px, 94vw);
+    height:190px;
+    background: var(--ui);
+    border-radius: 12px;
+    box-shadow: 0 18px 55px var(--shadow);
+    border: 2px solid rgba(255,155,200,0.55);
+    overflow:hidden;
+    z-index:70;
+    transition: background 120ms ease;
+  }
+  .textbox::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    background: radial-gradient(circle, rgba(255,150,200,0.28) 0 3px, transparent 4px) 0 0/22px 22px;
+    opacity: 0.55;
+    pointer-events:none;
+  }
+  .namebox{
+    position:absolute;
+    left:22px;
+    top:-18px;
+    background:#fff;
+    border: 3px solid var(--pink);
+    border-radius: 10px;
+    padding: 8px 18px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.18);
+    font-family:"NameDDLC","AllerDDLC", Arial, sans-serif;
+    font-size:28px;
+    color:#d94b86;
+    z-index:2;
+  }
+  .dialogue{
+    position:absolute;
+    left:26px; right:26px;
+    top:44px; bottom:18px;
+    font-family:"AllerDDLC", Arial, sans-serif;
+    font-size:28px;
+    line-height:1.25;
+    color: var(--ink);
+    text-shadow: 0 1px 0 rgba(255,255,255,0.5);
+    white-space: pre-wrap;
+    z-index:2;
+  }
+
+  /* edited mode */
+  .edited .dialogue{
+    font-family: "EditedDDLC","Courier New", monospace;
+    letter-spacing: 0.2px;
+    color:#1b0012;
+    text-shadow:none;
+  }
+
+  /* Keep UI readable even as background gets darker */
+  .ui-boost .textbox{ background: rgba(255,255,255,0.95); }
+  .ui-boost .choice{ background: rgba(255,255,255,0.96); }
+
+  /* ---------------- Shake + jitter ---------------- */
+  @keyframes shake {
+    0%{ transform: translate(0,0); }
+    10%{ transform: translate(var(--shake), calc(var(--shake) * -1)); }
+    20%{ transform: translate(calc(var(--shake) * -1), var(--shake)); }
+    30%{ transform: translate(var(--shake), var(--shake)); }
+    40%{ transform: translate(calc(var(--shake) * -1), calc(var(--shake) * -1)); }
+    50%{ transform: translate(var(--shake), 0); }
+    60%{ transform: translate(0, var(--shake)); }
+    70%{ transform: translate(calc(var(--shake) * -1), 0); }
+    80%{ transform: translate(0, calc(var(--shake) * -1)); }
+    90%{ transform: translate(var(--shake), calc(var(--shake) * -1)); }
+    100%{ transform: translate(0,0); }
+  }
+  .shaking{ animation: shake 52ms infinite; }
+
+  @keyframes textJitter{
+    0%{ transform: translate(0,0); }
+    25%{ transform: translate(0.9px,-0.9px); }
+    50%{ transform: translate(-0.9px,0.9px); }
+    75%{ transform: translate(0.9px,0.9px); }
+    100%{ transform: translate(0,0); }
+  }
+  .jitter{ animation: textJitter 95ms infinite; }
+
+  /* ---------------- Cursor magnet mode ---------------- */
+  .cursor-dot{
+    position:fixed;
+    width:10px; height:10px;
+    border-radius:50%;
+    background:#fff;
+    box-shadow: 0 0 0 2px rgba(255,155,200,0.9);
+    pointer-events:none;
+    z-index:9999;
+    opacity:0;
+    transition: opacity 180ms ease;
+  }
+  .cursor-on .cursor-dot{ opacity:1; }
+  .cursor-on{ cursor:none; }
+
+  /* ---------------- Final GIF overlay ---------------- */
+  .final-gif{
+    position:fixed; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    background: rgba(0,0,0,0.42);
+    z-index: 9999;
+    opacity:0;
+    pointer-events:none;
+    transition: opacity 120ms ease;
+  }
+  .final-gif.on{ opacity:1; }
+  .final-gif img{
+    width:min(520px, 80vw);
+    max-height:70vh;
+    border-radius: 10px;
+    box-shadow: 0 20px 90px rgba(0,0,0,0.85);
+    transform: scale(1.02);
+  }
+</style>
+</head>
+
+<body>
+  <div class="tap-to-start" id="tap">
+    <div class="box">
+      <div style="font-size:18px;">Click to start.</div>
+      <div class="small">Audio autoplay was blocked.</div>
+    </div>
+  </div>
+
+  <div class="final-gif" id="finalGif">
+    <img src="https://i.pinimg.com/originals/f0/61/c1/f061c18854fe28120ed76c9e03002937.gif" alt="">
+  </div>
+
+  <div class="cursor-dot" id="cursorDot"></div>
+
+  <div class="scene" id="scene">
+    <div class="bg" id="bg"></div>
+    <div class="soft"></div>
+    <canvas id="grain"></canvas>
+    <div class="glitch" id="glitch"></div>
+    <div class="tear"></div>
+    <div class="crt"></div>
+    <div class="sceneWash"></div>
+    <div class="scenePulse" id="scenePulse"></div>
+    <div class="vignette"></div>
+    <div class="flashW" id="flashW"></div>
+    <div class="flashB" id="flashB"></div>
+
+    <div class="choices-wrap" id="choicesWrap" aria-label="choices">
+      <div class="choice" id="yesChoice">Yes.</div>
+      <div class="choice" id="noChoice">No.</div>
+    </div>
+
+    <div class="textbox" id="textbox">
+      <div class="namebox" id="namebox">...</div>
+      <div class="dialogue" id="dialogue">Do you want to be my Valentine?</div>
+    </div>
+  </div>
+
+<script>
+/* ===========================
+   EPIC DDLC-ish escalation
+   =========================== */
+
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp  = (a,b,t)=>a+(b-a)*t;
+const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+
+/* ---- background ---- */
+const BG_URL = "https://preview.redd.it/ddlc-backgrounds-here-classroom-and-clubroom-edited-by-me-v0-d350dezmoo2a1.png?width=1080&crop=smart&auto=webp&s=19b73ea47badb7a43a4574e7369a43aba18264d1";
+document.getElementById("bg").style.backgroundImage = `url("${BG_URL}")`;
+document.getElementById("glitch").style.backgroundImage = `url("${BG_URL}")`;
+
+/* ---- elements ---- */
+const body = document.body;
+const scene = document.getElementById("scene");
+const wrap  = document.getElementById("choicesWrap");
+const yes   = document.getElementById("yesChoice");
+const no    = document.getElementById("noChoice");
+const namebox  = document.getElementById("namebox");
+const dialogue = document.getElementById("dialogue");
+const flashWEl = document.getElementById("flashW");
+const flashBEl = document.getElementById("flashB");
+const dot = document.getElementById("cursorDot");
+const tap = document.getElementById("tap");
+const finalGif = document.getElementById("finalGif");
+const scenePulseEl = document.getElementById("scenePulse");
+
+/* ---- audio ---- */
+const intro = new Audio("./intro.mp3");
+const scary = new Audio("./scary.mp3");
+intro.loop = true;
+scary.loop = true;
+intro.volume = 0.9;
+scary.volume = 0.0;
+let scaryArmed = false;
+
+async function tryStartAudio(){
+  try{ await intro.play(); tap.classList.remove("on"); return true; }
+  catch(e){ tap.classList.add("on"); return false; }
+}
+tryStartAudio();
+
+async function unlock(){
+  tap.classList.remove("on");
+  await tryStartAudio();
+  window.removeEventListener("pointerdown", unlock);
+  window.removeEventListener("keydown", unlock);
+}
+window.addEventListener("pointerdown", unlock);
+window.addEventListener("keydown", unlock);
+
+async function fadeToScary(){
+  if(scaryArmed) return;
+  scaryArmed = true;
+  try{ await scary.play(); }catch(e){}
+  const steps = 30;
+  for(let i=0;i<=steps;i++){
+    const t = i/steps;
+    intro.volume = 0.9*(1-t);
+    scary.volume = 0.95*t;
+    await sleep(18);
+  }
+  try{ intro.pause(); }catch(e){}
+}
+
+/* ---- CSS vars ---- */
+function setVar(name,val){ document.documentElement.style.setProperty(name,val); }
+
+/* ---- flashes / cuts ---- */
+function whiteFlash(ms=55){
+  flashWEl.style.opacity = "1";
+  setTimeout(()=>flashWEl.style.opacity="0", ms);
+}
+function blackFlash(ms=70){
+  flashBEl.style.opacity = "1";
+  setTimeout(()=>flashBEl.style.opacity="0", ms);
+}
+async function strobe(times=6){
+  for(let i=0;i<times;i++){
+    whiteFlash(25);
+    await sleep(55);
+    blackFlash(35);
+    await sleep(55);
+  }
+}
+function microCut(){
+  blackFlash(55);
+  setTimeout(()=>whiteFlash(45), 65);
+}
+
+/* ---- corruption ---- */
+function randomCorrupt(str, passes=1){
+  const map = [
+    ["a","a̶"],["e","e̷"],["i","i̸"],["o","o̵"],["u","u̷"],
+    ["n","n̶"],["s","s̷"],["t","t̸"],["y","y̶"],["r","r̸"]
+  ];
+  let out = str;
+  for(let p=0;p<passes;p++){
+    for(const [a,b] of map){
+      if(Math.random() < 0.50) out = out.replaceAll(a,b).replaceAll(a.toUpperCase(), b.toUpperCase());
+    }
+  }
+  return out;
+}
+
+/* ---- grain (optimized tile, ~18fps) ---- */
+const grainCanvas = document.getElementById("grain");
+const gctx = grainCanvas.getContext("2d", { alpha:true });
+const tile = document.createElement("canvas");
+tile.width = 220; tile.height = 220;
+const tctx = tile.getContext("2d", { alpha:true });
+
+function resize(){
+  grainCanvas.width = innerWidth;
+  grainCanvas.height = innerHeight;
+}
+addEventListener("resize", resize);
+resize();
+
+let lastNoise = 0;
+function drawNoise(now){
+  const grain = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--grain")) || 0;
+  if(grain > 0.02){
+    if(now - lastNoise > 55){
+      lastNoise = now;
+      const img = tctx.createImageData(tile.width, tile.height);
+      const d = img.data;
+      for(let i=0;i<d.length;i+=4){
+        const r = (Math.random()*255)|0;
+        d[i]=r; d[i+1]=r; d[i+2]=r;
+        d[i+3] = (Math.random()*75)|0;
+      }
+      tctx.putImageData(img,0,0);
+    }
+    gctx.clearRect(0,0,grainCanvas.width,grainCanvas.height);
+    gctx.imageSmoothingEnabled = false;
+    gctx.drawImage(tile,0,0,grainCanvas.width,grainCanvas.height);
+  } else {
+    gctx.clearRect(0,0,grainCanvas.width,grainCanvas.height);
+  }
+  requestAnimationFrame(drawNoise);
+}
+requestAnimationFrame(drawNoise);
+
+/* ---- cursor + magnet ---- */
+let mouseX = innerWidth*0.5, mouseY = innerHeight*0.5;
+let fakeX = mouseX, fakeY = mouseY;
+addEventListener("mousemove", e=>{ mouseX=e.clientX; mouseY=e.clientY; });
+
+function updateCursor(){
+  fakeX = lerp(fakeX, mouseX, 0.30);
+  fakeY = lerp(fakeY, mouseY, 0.30);
+
+  if(stage >= 7 || epicSceneActive){
+    const r = yes.getBoundingClientRect();
+    const tx = r.left + r.width*0.5;
+    const ty = r.top  + r.height*0.5;
+
+    const pull = epicSceneActive ? 0.14 : (0.09 + stage*0.016);
+    fakeX = lerp(fakeX, tx, pull);
+    fakeY = lerp(fakeY, ty, pull);
+
+    const wr = wrap.getBoundingClientRect();
+    const dx = (fakeX - (wr.left + wr.width/2)) * (epicSceneActive ? 0.07 : 0.05);
+    const dy = (fakeY - (wr.top  + wr.height/2)) * (epicSceneActive ? 0.07 : 0.05);
+    wrap.style.transform = `translate(-50%,-50%) translate(${dx}px, ${dy}px)`;
+  } else {
+    wrap.style.transform = `translate(-50%,-50%)`;
+  }
+
+  dot.style.left = (fakeX - 5) + "px";
+  dot.style.top  = (fakeY - 5) + "px";
+  requestAnimationFrame(updateCursor);
+}
+
+
+/* ---- stage & lines ---- */
+let stage = 0;
+const MAX_STAGE = 12;
+const SCENE_START_STAGE = 4;     // after a few “No”
+const SCENE_TRIGGER_STAGE = 6;   // begin the epic sequence here
+const FINAL_STAGE = 12;
+
+let LINES = [
+  "Do you want to be my Valentine?",
+  "…No?",
+  "This is never going to end.\nJust make the choice, okay?",
+  "You’re still trying to say no.",
+  "Stop.",
+  "Just click yes.",
+  "Why are you making this hard?",
+  "You’re not listening.",
+  "Don’t do that.",
+  "I can wait.",
+  "…",
+  "…",
+  "…"
+];
+
+ LINES = [
+  "Will you be my Valentine?",
+  "uh. . a mistake maybe",
+  "?",
+  "Why?",
+  "Why???",
+  ": (",
+  "....",
+  "....",
+  "....",
+  "....",
+  "…",
+  "…",
+  "…"
+];
+function applyStageVisuals(){
+  // cap darkness so it never goes full black
+  const dark = Math.min(0.55, stage*0.06);         // max 0.55
+  const vig  = Math.min(0.92, 0.12 + stage*0.06);  // still strong but not blackout
+  const grain= Math.min(0.80, stage*0.08);
+  const glitch = Math.max(0, (stage-1)*0.10);
+  const rgb = Math.min(12, Math.max(0,stage-2)*1.8);
+  const hue = Math.max(0,stage-3)*6;
+  const blur= Math.max(0,stage-8)*0.4;
+  const invert = stage >= 11 ? 0.15 : 0;
+
+  setVar("--stage", stage);
+  setVar("--zoom", 1 + stage*0.014);
+  setVar("--darken", dark);
+  setVar("--vignette", vig);
+  setVar("--grain", grain);
+  setVar("--glitch", glitch);
+  setVar("--rgb", `${rgb}px`);
+  setVar("--hue", `${hue}deg`);
+  setVar("--blur", `${blur}px`);
+  setVar("--invert", invert);
+
+  // scanlines/tear ramp
+  setVar("--lines", Math.min(0.6, Math.max(0, stage-3)*0.12));
+  setVar("--tear",  Math.min(0.6, Math.max(0, stage-4)*0.10));
+
+  // shake / jitter
+  if(stage >= 3) scene.classList.add("shaking"); else scene.classList.remove("shaking");
+  if(stage >= 4) dialogue.classList.add("jitter"); else dialogue.classList.remove("jitter");
+
+  // cursor mode
+  if(stage >= 4) body.classList.add("cursor-on"); else body.classList.remove("cursor-on");
+
+  // edited mode
+  if(stage >= 7) body.classList.add("edited"); else body.classList.remove("edited");
+
+  // UI readability boost when stage gets high
+  if(stage >= 9) body.classList.add("ui-boost"); else body.classList.remove("ui-boost");
+}
+
+function setStage(s){
+  stage = clamp(s, 0, MAX_STAGE);
+  body.classList.remove(...Array.from(body.classList).filter(c=>c.startsWith("stage-")));
+  body.classList.add(`stage-${stage}`);
+
+  namebox.textContent = (stage >= 2) ? "yours" : "yours";
+
+  let line = LINES[Math.min(stage, LINES.length-1)];
+  if(stage >= 7) line = randomCorrupt(line, 1);
+  if(stage >= 10) line = randomCorrupt(line, 2);
+  dialogue.textContent = line;
+
+  applyStageVisuals();
+
+  // timed “snap” effects
+  if(stage >= 4 && Math.random() < 0.50) microCut();
+  if(stage >= 6 && Math.random() < 0.60) whiteFlash(35);
+
+  // audio wobble as it worsens
+  if(stage >= 7) audioWobble();
+}
+
+/* ---- audio wobble ---- */
+let wobbleLock = false;
+async function audioWobble(){
+  if(wobbleLock) return;
+  wobbleLock = true;
+  if(scaryArmed){
+    scary.playbackRate = 0.85 + Math.random()*0.40; // 0.85 - 1.25
+    if(Math.random() < 0.35){
+      const v = scary.volume;
+      scary.volume = 0.03;
+      await sleep(40 + Math.random()*70);
+      scary.volume = v;
+    }
+  }
+  setTimeout(()=>wobbleLock=false, 240);
+}
+
+/* ---- choice duplication storm helpers ---- */
+function addFakeChoice(text="No."){
+  const clone = document.createElement("div");
+  clone.className = "choice";
+  clone.textContent = text;
+  clone.style.opacity = (0.35 + Math.random()*0.55).toFixed(2);
+  clone.style.filter = "saturate(0.6) contrast(1.1)";
+  clone.style.borderColor = "rgba(255,155,200,0.45)";
+  clone.style.transform = `translate(${(Math.random()*34-17).toFixed(1)}px, ${(Math.random()*28-14).toFixed(1)}px) rotate(${(Math.random()*10-5).toFixed(1)}deg)`;
+  clone.style.pointerEvents = "none";
+  wrap.appendChild(clone);
+  setTimeout(()=>{ try{ clone.remove(); }catch(e){} }, 260 + Math.random()*500);
+}
+
+function tormentNo(){
+  const t = stage;
+
+  // wobble
+  const wob = 10 + t*9;
+  const wobX = (Math.random()*wob - wob/2);
+  const wobY = (Math.random()*wob - wob/2);
+  no.style.transform = `translate(${wobX}px, ${wobY}px) rotate(${(Math.random()*16-8)}deg)`;
+
+  // run away
+  if(t >= 3){
+    no.onmouseenter = () => {
+      const jump = 60 + t*18;
+      const nx = (Math.random()*jump - jump/2);
+      const ny = (Math.random()*jump - jump/2);
+      no.style.transform = `translate(${nx}px, ${ny}px) rotate(${(Math.random()*28-14)}deg)`;
+      if(t >= 7 && Math.random() < 0.5) microCut();
+    };
+  } else {
+    no.onmouseenter = null;
+  }
+
+  // unreliable
+  if(t >= 5){
+    no.style.filter = "blur(0.85px) contrast(1.25)";
+    no.style.opacity = "0.82";
+    no.style.pointerEvents = (Math.random() < 0.70) ? "none" : "auto";
+    setTimeout(()=>no.style.pointerEvents="auto", 220);
+  } else {
+    no.style.filter = "";
+    no.style.opacity = "";
+    no.style.pointerEvents = "auto";
+  }
+}
+
+/* ---------------- EPIC SCENE ---------------- */
+let epicSceneActive = false;
+let sceneLocked = false;
+
+async function startEpicScene(){
+  if(sceneLocked) return;
+  sceneLocked = true;
+  epicSceneActive = true;
+
+  // lock clicking during scene (you can still watch it)
+  yes.style.pointerEvents = "none";
+  no.style.pointerEvents = "none";
+
+  // ramp “scene” vars
+  setVar("--sceneOn", 1);
+  setVar("--lines", 0.65);
+  setVar("--tear", 0.65);
+  setVar("--grain", 0.85);
+  setVar("--glitch", 0.85);
+  setVar("--rgb", "12px");
+  setVar("--darken", "0.35");     // keep visible
+  setVar("--vignette", "0.88");
+  setVar("--shake", "16px");
+  body.classList.add("ui-boost");
+  body.classList.add("edited");
+
+  namebox.textContent = "Yours";
+  dialogue.textContent = "…";
+
+  // scene timeline (feels like a “sequence”)
+  const total = 3200; // ms
+  const start = performance.now();
+
+  while(performance.now() - start < total){
+    const t = performance.now() - start;
+
+    // hue cycle
+    setVar("--sceneTint", `${(t*0.35)%360}deg`);
+
+    // pulse strobe (not constant, bursts)
+    if(Math.random() < 0.35){
+      scenePulseEl.style.opacity = (0.10 + Math.random()*0.35).toFixed(2);
+      setTimeout(()=>scenePulseEl.style.opacity="0", 40 + Math.random()*60);
+    }
+
+    // flash cuts
+    if(Math.random() < 0.20) microCut();
+    if(Math.random() < 0.25) whiteFlash(28);
+
+    // spam fake “No” choices
+    const spam = 2 + Math.floor(Math.random()*4);
+    for(let i=0;i<spam;i++){
+      addFakeChoice(Math.random()<0.65 ? "No." : "No");
+    }
+
+    // corrupt dialogue rapidly
+    const base = [
+      "No.",
+      "No no no.",
+      "Stop.",
+      "Just pick yes.",
+      "This is never going to end.",
+      "…"
+    ][Math.floor(Math.random()*6)];
+    dialogue.textContent = randomCorrupt(base, 1 + (Math.random()<0.4?1:0));
+
+    // audio glitch
+    audioWobble();
+
+    await sleep(120);
+  }
+
+  // “snap back” moment
+  await strobe(5);
+  dialogue.textContent = "…there.";
+  setVar("--sceneOn", 0);
+
+  // unlock but basically push to finale immediately
+  yes.style.pointerEvents = "auto";
+  no.style.pointerEvents = "auto";
+
+  epicSceneActive = false;
+
+  // jump to final behavior
+  stage = Math.max(stage, FINAL_STAGE);
+  applyStageVisuals();
+  await sleep(220);
+  await playFinalAndGoYes();
+}
+
+/* ---- finale ---- */
+let locked = false;
+async function playFinalAndGoYes(){
+  if(locked) return;
+  locked = true;
+
+  // hit hard but keep visible
+  setVar("--darken","0.40");
+  setVar("--glitch","0.95");
+  setVar("--grain","0.88");
+  setVar("--vignette","0.95");
+  setVar("--rgb","12px");
+  setVar("--invert","0.18");
+  setVar("--shake","18px");
+
+  await strobe(6);
+
+  finalGif.classList.add("on");
+  await sleep(1200);
+  window.location.href = "yes.html";
+}
+
+/* ---- button handlers ---- */
+yes.addEventListener("click", ()=>{
+  window.location.href = "yes.html";
+});
+
+no.addEventListener("click", async ()=>{
+  await fadeToScary();
+
+  // trigger epic scene after a few No’s (and before darkness would ever block UI)
+  if(!epicSceneActive && stage >= SCENE_TRIGGER_STAGE){
+    startEpicScene();
+    return;
+  }
+
+  // normal escalation early
+  if(stage < MAX_STAGE){
+    setStage(stage + 1);
+    tormentNo();
+
+    if(stage >= SCENE_START_STAGE){
+      // add some fake No's for spice
+      if(Math.random() < 0.75) addFakeChoice("No.");
+      if(Math.random() < 0.35) addFakeChoice("No");
+    }
+
+    // as it ramps, “Yes” becomes visually stable (psychological)
+    if(stage >= 5 && Math.random() < 0.60){
+      yes.style.transform = "scale(1.05)";
+      yes.style.filter = "brightness(1.10)";
+      setTimeout(()=>{ yes.style.transform=""; yes.style.filter=""; }, 140);
+    }
+
+    return;
+  }
+
+  // failsafe: if somehow you hit max without scene, just finale
+  await playFinalAndGoYes();
+});
+
+/* ---- initial ---- */
+setStage(0);
+updateCursor();
+
+</script>
+</body>
+</html>
